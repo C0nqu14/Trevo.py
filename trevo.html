@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TREVO.PY — Entre Códigos e Confissões</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text x='0' y='14' font-size='14'>🍀</text></svg>" type="image/svg+xml">
+  <style>
+    /* Reset e Base */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background: black;
+      color: #00ff00; /* Cor padrão para o terminal */
+      font-family: 'Share Tech Mono', monospace; /* Fonte para o terminal */
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* Inicialmente hidden para o terminal */
+    }
+
+    /* --- Background Matrix (para o terminal) --- */
+    #matrix-background {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0; /* Fica no fundo */
+      opacity: 0.5;
+      transition: opacity 1s ease-in-out;
+    }
+    #matrix-background.hidden {
+      opacity: 0;
+    }
+    #matrix {
+      display: block;
+    }
+
+    /* --- Terminal Interface --- */
+    #terminal-interface {
+      position: relative;
+      z-index: 1; /* Acima do matrix */
+      padding: 20px;
+      white-space: pre-wrap;
+      overflow-y: auto; /* Para permitir scroll no histórico */
+      flex-grow: 1;
+      max-height: 100%;
+      transition: opacity 0.5s ease-out;
+    }
+    #terminal-interface.hidden {
+      opacity: 0;
+      pointer-events: none; /* Desabilita cliques quando escondido */
+    }
+    .input-line {
+      display: flex;
+      align-items: center;
+    }
+    .input-line::before {
+      content: 'trevo@py ~/story$';
+      margin-right: 8px;
+      color: #00ffff; /* Ciano para o prompt */
+    }
+    input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #00ff00;
+      font-family: inherit;
+      font-size: 1em;
+      width: 100%;
+      caret-color: #00ff00; /* Cor do cursor */
+    }
+    #history div {
+      margin-bottom: 5px; /* Espaço entre as linhas do histórico */
+    }
+    .terminal-output {
+        color: #00ff00; /* Verde padrão */
+    }
+    .terminal-error {
+        color: #ff3333; /* Vermelho para erros */
+    }
+    .terminal-info {
+        color: #ffff00; /* Amarelo para informações */
+    }
+    .terminal-success {
+        color: #00ff99; /* Verde neon para sucesso */
+    }
+
+    /* --- Loading Overlay (Comum a ambos) --- */
+    #loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #000;
+        color: #00ff99;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.5em;
+        z-index: 999;
+        transition: opacity 1s ease-out;
+    }
+    #loading-overlay.fade-out {
+        opacity: 0;
+        pointer-events: none;
+    }
+    .spinner {
+        border: 4px solid rgba(0, 255, 153, 0.3);
+        border-top: 4px solid #00ff99;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20px;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* --- Story Interface (Base do código anterior) --- */
+    #story-interface {
+      /* POSICIONAMENTO CRUCIAL */
+      position: fixed; /* Ocupa a tela inteira e não flui com o terminal */
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1; /* Acima do matrix */
+
+      display: none; /* Escondido por padrão */
+      flex-direction: column;
+      align-items: center;
+      background: linear-gradient(135deg, #000000 0%, #0a0a0a 50%, #1a1a1a 100%); /* Fundo próprio para a história */
+      color: #00ff99;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1.6;
+      font-size: 1.05em;
+      
+      overflow-y: auto; /* Permite scroll no conteúdo da história */
+      transition: opacity 0.5s ease-out;
+      opacity: 0;
+    }
+    #story-interface.active {
+      display: flex;
+      opacity: 1;
+    }
+
+    /* O container dentro da story-interface precisa crescer */
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px;
+      flex-grow: 1; /* Faz o container crescer para empurrar o rodapé */
+      min-height: 100vh; /* Garante que o container tenha pelo menos a altura da tela */
+      position: relative;
+      z-index: 1;
+      width: 100%; /* Garante que o container use a largura total */
+    }
+
+    h1 {
+      text-align: center;
+      color: #00ffcc;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2.8em;
+      margin-bottom: 0.8em;
+      animation: glitch 2s infinite alternate;
+      text-shadow: 0 0 15px rgba(0, 255, 204, 0.7);
+      letter-spacing: 2px;
+      padding-top: 20px;
+    }
+    @keyframes glitch {
+      0% { text-shadow: 2px 0px rgba(255, 0, 0, 0.7), -2px 0px rgba(0, 255, 255, 0.7); transform: translateX(0); }
+      20% { text-shadow: -1px 0px rgba(255, 0, 0, 0.7), 1px 0px rgba(0, 255, 255, 0.7); transform: translateX(0); }
+      40% { text-shadow: 3px 0px rgba(255, 0, 0, 0.7), -3px 0px rgba(0, 255, 255, 0.7); transform: translateX(-2px); }
+      60% { text-shadow: -2px 0px rgba(255, 0, 0, 0.7), 2px 0px rgba(0, 255, 255, 0.7); transform: translateX(2px); }
+      80% { text-shadow: 1px 0px rgba(255, 0, 0, 0.7), -1px 0px rgba(0, 255, 255, 0.7); transform: translateX(-1px); }
+      100% { text-shadow: -3px 0px rgba(255, 0, 0, 0.7), 3px 0px rgba(0, 255, 255, 0.7); transform: translateX(0); }
+    }
+
+    .terminal-box { /* Agora é o output da história */
+      background-color: rgba(17, 17, 17, 0.95);
+      border: 1px solid #00ff99;
+      padding: 25px;
+      width: 95%;
+      max-width: 900px;
+      min-height: 400px;
+      margin-top: 1.5em;
+      border-radius: 10px;
+      box-shadow: 0 0 25px rgba(0, 255, 153, 0.6), inset 0 0 10px rgba(0, 255, 153, 0.2);
+      white-space: pre-wrap;
+      font-size: 1.1em;
+      overflow-y: auto;
+      position: relative;
+      z-index: 10;
+    }
+    .terminal-box::before { /* Removemos o prompt fixo daqui */
+        content: none;
+    }
+    .terminal-box h2 {
+        color: #00ffff;
+        margin-bottom: 15px;
+        text-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+    }
+
+    .command-bar {
+      margin-top: 2em;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 900px;
+      position: relative;
+      z-index: 10;
+      padding-bottom: 20px; /* Espaço para não colar no rodapé */
+    }
+    .cmd {
+      background: #00cc88;
+      color: #0a0a0a;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      box-shadow: 0 4px 8px rgba(0, 204, 136, 0.4);
+    }
+    .cmd:hover {
+      background: #00e699;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(0, 204, 136, 0.6);
+    }
+    .cmd.active {
+      background: #00ffbb;
+      box-shadow: 0 0 15px #00ffbb, inset 0 0 5px #00ffbb;
+      color: #000;
+      transform: scale(1.02);
+    }
+
+    footer {
+      margin-top: auto; /* Empurra o rodapé para o final do container */
+      text-align: center;
+      padding: 20px;
+      font-size: 0.85em;
+      color: #555;
+      position: relative;
+      z-index: 1;
+      width: 100%; /* Ocupa a largura total */
+    }
+    footer a {
+      color: #00ffff;
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+    footer a:hover {
+      color: #00e0e0;
+      text-decoration: underline;
+    }
+
+    #three-bg { /* Canvas para o Three.js na interface da história */
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      opacity: 0.2;
+      transition: opacity 1s ease-in-out;
+    }
+    #three-bg.hidden {
+        opacity: 0;
+    }
+
+    #audio-control {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: rgba(0, 204, 136, 0.7);
+      color: #0a0a0a;
+      border: none;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      font-size: 1.5em;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 204, 136, 0.5);
+      transition: background-color 0.3s ease, transform 0.3s ease;
+      z-index: 100;
+    }
+    #audio-control:hover {
+      background-color: rgba(0, 230, 153, 0.9);
+      transform: scale(1.1);
+    }
+
+    #back-to-terminal {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background-color: rgba(255, 0, 100, 0.7); /* Rosa/vermelho para diferenciar */
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 15px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(255, 0, 100, 0.5);
+      transition: background-color 0.3s ease, transform 0.3s ease;
+      z-index: 100;
+      display: none; /* Escondido por padrão, aparece com a história */
+    }
+    #back-to-terminal:hover {
+      background-color: rgba(255, 50, 150, 0.9);
+      transform: scale(1.05);
+    }
+
+    /* Media Queries para Responsividade */
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2.2em;
+      }
+      .terminal-box {
+        padding: 20px;
+        min-height: 350px;
+      }
+      .cmd {
+        padding: 10px 15px;
+        font-size: 0.9em;
+      }
+      #terminal-interface {
+        font-size: 0.9em;
+      }
+    }
+    @media (max-width: 480px) {
+      h1 {
+        font-size: 1.8em;
+      }
+      .terminal-box {
+        padding: 15px;
+        min-height: 300px;
+        font-size: 0.95em;
+      }
+      .command-bar {
+        gap: 10px;
+      }
+      .cmd {
+        font-size: 0.8em;
+      }
+      #terminal-interface {
+        font-size: 0.85em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <p id="loading-message">Inicializando Sistema TREVO.PY...</p>
+  </div>
+
+  <canvas id="matrix-background"></canvas>
+
+  <div id="terminal-interface">
+    <div>Bem-vindo ao <strong>TREVO.PY</strong> — Entre Códigos e Confissões</div>
+    <div>Digite <code>help</code> para ver os comandos disponíveis.</div>
+    <br />
+    <div id="history"></div>
+    <div class="input-line">
+      <input type="text" id="terminal-input" autofocus />
+    </div>
+  </div>
+
+  <div id="story-interface">
+    <canvas id="three-bg"></canvas>
+    <div id="container">
+      <h1>TREVO.PY — ENTRE CÓDIGOS E CONFISSÕES</h1>
+      <div class="terminal-box" id="story-output"></div>
+      <div class="command-bar" id="command-bar-buttons">
+        </div>
+      <footer>
+        <p>por Trevo (João Conquia)</p>
+        <p>Um projeto experimental de <a href="https://github.com/YourGitHub" target="_blank">Codificação & Emoção</a></p>
+      </footer>
+    </div>
+  </div>
+
+  <button id="audio-control">🔊</button>
+  <button id="back-to-terminal">← VOLTAR AO SHELL</button>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/three.module.min.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+
+    // --- Elementos do DOM ---
+    // Terminal
+    const terminalInterface = document.getElementById('terminal-interface');
+    const terminalInput = document.getElementById('terminal-input');
+    const terminalHistory = document.getElementById('history');
+    const matrixCanvas = document.getElementById('matrix-background'); // O canvas para o efeito Matrix
+
+    // Story
+    const storyInterface = document.getElementById('story-interface');
+    const storyOutput = document.getElementById('story-output');
+    const commandBarButtons = document.getElementById('command-bar-buttons');
+    const threeBgCanvas = document.getElementById('three-bg');
+
+    // Globais
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingMessage = document.getElementById('loading-message');
+    const audioControl = document.getElementById('audio-control');
+    const backToTerminalButton = document.getElementById('back-to-terminal');
+
+    // --- Estados Globais ---
+    let currentChapterId = null;
+    let isSpeakingSynopsis = false;
+    let isMusicPlaying = false;
+    let isStoryMode = false; // true = história, false = terminal
+
+    // --- Áudios ---
+    const terminalStartSound = new Audio('audio/terminal_start.wav');
+    const typingClickSound = new Audio('audio/typing_click.wav');
+    const backgroundMusic = new Audio('audio/background_music.mp3');
+    backgroundMusic.loop = true;
+    backgroundMusic.volume = 0.3;
+
+    // --- Three.js Globals (para a Story Interface) ---
+    let scene, camera, renderer, currentObject, animationFrameId;
+
+    // --- Conteúdo dos Capítulos (permanece o mesmo) ---
+    const chapters = {
+      0: `> Para Íris. Para os manos que falavam em código e sentiam em silêncio. Para quem não entende nada de tecnologia, mas entende que amar pode ser o maior bug do mundo.`,
+      1: `A nossa história começa aqui\n\nÉ estranho contar isso. Mas eu preciso. Porque tem coisa que a gente sente tanto, que se não colocar pra fora, explode.\n\nNão é uma história qualquer. É sobre mim, o Trevo, e a Íris. Nem sei se dá pra dizer que fomos um casal. A verdade é que a gente nunca teve um rótulo certo. Só sei que havia algo ali. Forte. Confuso. Bonito.\n\nE se você leu até aqui, prometo: vai valer a pena.`,
+      2: `10°IF – Os quatro cavaleiros da informática\n\nEu era o hacker da turma. Mexia com tudo: redes, segurança, programação, web. Meu mundo era tecnologia. Meus amigos eram como eu:\n\n- Cleiton era o Back-end e o cara dos bancos de dados. Inteligente, irônico, e sempre sério com tudo.\n- Maurício era o Front-end. O mais sensível. O mais criativo. Sabia expressar tudo com um layout e uma lágrima.\n- Tomás era o das redes. Ligava computadores e pessoas com a mesma facilidade.\n\nE a gente? Conversava com código. Falava mais de exploits e algoritmos do que de qualquer outra coisa. Era nossa linguagem. Nossa bolha. Nosso mundo.`,
+      3: `11°IB – Quando 70 mundos colidiram\n\nNo 11°IB, juntaram o 10°IF e o 10°IB. Viramos 70 alunos na mesma sala. Todos informáticos. Era muito nome, muito sotaque, muita energia. E foi aí que tudo começou a mudar.\n\nApareceram quatro meninas diferentes de tudo que a gente conhecia:\n\n- Albertina — inteligente e confiante.\n- Lemba — linda e objetiva.\n- Rosária — emotiva, delicada.\n- Íris — uma incógnita.\n\nEla, a Íris, era doce. E estranha. Uma mistura que te deixava curioso.`,
+      4: `O bilhete que virou tempestade\n\nUm dia, a Albertina me entregou um bilhete. Diziam que era da Lemba. Mas eu soube depois: a mente por trás era a Íris. O bilhete dizia:\n\n“Eu gosto de ti. Costumo te observar.”\n\nAquilo me deixou em alerta. Eu e Bilson recebemos o mesmo papel. E eu, claro, convoquei os manos.\n\n“Vamos investigar.”\n\nEscrevemos cartas-resposta. Codificadas. Chamamos elas pro portão da escola. Ninguém apareceu. Mas todas estavam lá, observando.`,
+      5: `O jogo de perfis falsos\n\nCriámos quatro contas anônimas. Mandámos mensagens à Lemba ao mesmo tempo. Ela ficou confusa. Riu. Brincou. Mas também começou a se perder. Descobrimos que tudo tinha sido ideia da Íris. Paramos. A Lemba confessou tudo. Disse que se divertiu.\n\nA Íris ficou em silêncio. Ou pelo menos, parecia.`,
+      6: `Quando criámos um bot (e quase fomos expulsos)\n\nRosária quis entrar no jogo. Pediu que fizéssemos algo parecido com ela. A gente recusou. Mas ela insistiu tanto que Maurício criou um bot que respondia por nós.\n\nSó que deu ruim. O bot respondeu mal. Ofendeu. E Rosária correu à direção.\n\nO pior? O tio dela era o diretor pedagógico.\n\nFomos chamados. Ameaçaram expulsar a gente. Mas tínhamos provas. Gravámos tudo. E mostramos que foi ela quem pediu. No fim, saímos como os “meninos inteligentes da informática”. Mas foi por pouco.`,
+      7: `Albertina, a história que também foi bonita\n\nNaquele tempo, eu namorava a Albertina. Era bom. Era leve. Foi verdadeiro.\n\nDepois, terminámos. Ela ficou com Maurício. E eu fiquei bem com isso. Porque não era sobre posse. Era sobre sentir. E naquele momento, a minha cabeça estava em outro lugar. Ou melhor, com outra pessoa.`,
+      8: `As palavras da Íris\n\nA Íris começou a se abrir. Aos poucos. Um áudio de onze minutos. Depois, um texto de trinta e duas páginas. Ela falou de dor, de depressão, de traumas. Disse que eu era o anjo da guarda dela. Que se não fosse eu, talvez ela não estivesse mais aqui.\n\nE eu chorei. Porque era real. E era forte demais pra fingir que não doía.\n\nEla dizia que não gostava de mim. Mas o ciúme dizia o contrário. As mensagens. As atitudes. O jeito como ela olhava pra trás só pra ver se eu estava vindo.`,
+      9: `A confissão\n\nUma noite, trocamos mensagens. Áudios. Silêncios. E então eu disse:\n\n“Eu estava só a brincar… até perceber que te amava.”\n\nE ela respondeu:\n\n“Eu planejei te fazer gostar… e depois desaparecer. Mas esqueci de fechar meu próprio coração.”\n\nAli, tudo fez sentido. O jogo virou verdade. E a gente, que só sabia flertar com indiretas, passou a falar claro.`,
+      10: `Loop de medo e saudade\n\nNos afastámos. Voltámos. Sumimos. E aparecemos de novo.\n\nEla dizia que eu falava mal dela pros outros. Eu achava que ela só estava me usando. Mas no fundo, os dois só estavam com medo.\n\nMedo de amar. Medo de não ser suficiente. Medo de se entregar.`,
+      11: `Entre a Íris e a culpa\n\nDepois de tudo, ela me contou uma coisa difícil de ouvir. Disse que tinha conversado com a cunhada e algumas pessoas próximas. Contou toda a nossa história. Falou que gostava de mim. Mas elas disseram para ela se afastar.\n\n“Disseram que não importa o quanto eu gosto de ti, era melhor me afastar porque tu foste ex da minha melhor amiga. E se acontecer algo entre nós, quem vai sair como má sou eu.”\n\n“Eu não quero, mas acho que é melhor a gente ser só amigos. Pra eu não estragar a amizade com a Albertina e ser a má falada.”\n\n“Também tá difícil pra mim.”\n\nLer aquilo foi como levar um chute no peito. Não por raiva. Mas por impotência.\n\nÀs vezes o amor não morre. Ele só se cala por medo do que o mundo vai dizer.`,
+      12: `Ainda somos nós?\n\nHoje a gente ainda se fala. Às vezes com raiva. Outras com carinho. Ainda há silêncio, sim. Mas também há vontade.\n\nE eu não sei se um dia a gente vai dar certo. Mas sei que, se não der, vai ter sido lindo mesmo assim.\n\nPorque com a Íris eu aprendi que o amor não precisa de manual. Nem de certeza. Só de entrega.`,
+      13: `Última linha de código\n\nTalvez esse livro nunca tenha um fim. Talvez sejamos uma história em beta. Mas enquanto ela existir, vou lembrar:\n\nEla me chamava de Trevo.\nE eu queria ser sorte pra vida inteira dela.\n\nFim… por enquanto.`
+    };
+
+    const chapterTitles = {
+        0: 'Prefácio',
+        1: 'A nossa história começa aqui',
+        2: '10°IF – Os quatro cavaleiros da informática',
+        3: '11°IB – Quando 70 mundos colidiram',
+        4: 'O bilhete que virou tempestade',
+        5: 'O jogo de perfis falsos',
+        6: 'Quando criámos um bot (e quase fomos expulsos)',
+        7: 'Albertina, a história que também foi bonita',
+        8: 'As palavras da Íris',
+        9: 'A confissão',
+        10: 'Loop de medo e saudade',
+        11: 'Entre a Íris e a culpa',
+        12: 'Ainda somos nós?',
+        13: 'Última linha de código'
+    };
+
+    // --- Three.js Setup (para a Story Interface) ---
+    function initThreeJS() {
+        try {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 200;
+
+            renderer = new THREE.WebGLRenderer({
+                canvas: threeBgCanvas,
+                alpha: true,
+                antialias: true,
+                context: threeBgCanvas.getContext('webgl', { preserveDrawingBuffer: true }),
+                powerPreference: "low-power"
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(0, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            animateThreeJS();
+            console.log("Three.js inicializado com sucesso usando WebGL 1.0.");
+
+        } catch (e) {
+            console.error("Erro ao iniciar Three.js (WebGL pode não ser suportado):", e);
+            loadingMessage.innerText = "WebGL não suportado. Conteúdo estático exibido.";
+            threeBgCanvas.style.display = 'none';
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        }
+    }
+
+    function createChapterObject(chapterId) {
+        if (currentObject) {
+            scene.remove(currentObject);
+            // Dispose of geometry and material to free up memory
+            if (currentObject.geometry) currentObject.geometry.dispose();
+            if (currentObject.material) {
+                if (Array.isArray(currentObject.material)) {
+                    currentObject.material.forEach(m => m.dispose());
+                } else {
+                    currentObject.material.dispose();
+                }
+            }
+            if (currentObject instanceof THREE.Group) {
+                currentObject.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+            }
+            currentObject = null;
+        }
+
+        let geometry, material;
+        const baseColor = new THREE.Color();
+        let rotationSpeed = 0.005;
+
+        switch (chapterId) {
+            case 0: geometry = new THREE.DodecahedronGeometry(50, 0); baseColor.set(0x00ffcc); rotationSpeed = 0.002; break;
+            case 1: geometry = new THREE.SphereGeometry(60, 32, 32); baseColor.set(0x00ff99); rotationSpeed = 0.003; break;
+            case 2: geometry = new THREE.BoxGeometry(70, 70, 70); baseColor.set(0x00ccff); rotationSpeed = 0.008; break;
+            case 3: geometry = new THREE.ConeGeometry(50, 100, 32); baseColor.set(0xffaa00); rotationSpeed = 0.006; break;
+            case 4: case 5: geometry = new THREE.PlaneGeometry(100, 100, 1, 1); baseColor.set(0xff00cc); rotationSpeed = 0.004; break;
+            case 6: geometry = new THREE.IcosahedronGeometry(60, 1); baseColor.set(0x9900ff); rotationSpeed = 0.01; break;
+            case 7: geometry = new THREE.TorusGeometry(60, 20, 16, 100); baseColor.set(0xffffff); rotationSpeed = 0.004; break;
+            case 8: case 11: geometry = new THREE.OctahedronGeometry(60, 0); baseColor.set(0xcc33ff); rotationSpeed = 0.007; break;
+            case 9: geometry = new THREE.SphereGeometry(70, 64, 64); baseColor.set(0xff6600); rotationSpeed = 0.003; break;
+            case 10:
+                const group = new THREE.Group();
+                const sphereGeo = new THREE.SphereGeometry(30, 32, 32);
+                const mat1 = new THREE.MeshPhongMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.5 });
+                const mat2 = new THREE.MeshPhongMaterial({ color: 0xff00ff, emissive: 0xff00ff, emissiveIntensity: 0.5 });
+                const s1 = new THREE.Mesh(sphereGeo, mat1);
+                const s2 = new THREE.Mesh(sphereGeo, mat2);
+                s1.position.x = -40;
+                s2.position.x = 40;
+                group.add(s1);
+                group.add(s2);
+                currentObject = group;
+                break;
+            case 12: geometry = new THREE.TorusKnotGeometry(40, 15, 100, 16); baseColor.set(0x00ffcc); rotationSpeed = 0.006; break;
+            case 13: geometry = new THREE.CylinderGeometry(40, 40, 80, 32); baseColor.set(0xaaaaaa); rotationSpeed = 0.002; break;
+            default: geometry = new THREE.SphereGeometry(50, 32, 32); baseColor.set(0x00ff99); rotationSpeed = 0.005;
+        }
+
+        if (!currentObject) {
+            material = new THREE.MeshPhongMaterial({
+                color: baseColor,
+                specular: 0xcccccc,
+                shininess: 30,
+                transparent: true,
+                opacity: 0.7
+            });
+            currentObject = new THREE.Mesh(geometry, material);
+        }
+        currentObject.rotationSpeed = rotationSpeed;
+        scene.add(currentObject);
+    }
+
+    function animateThreeJS() {
+        if (!renderer || !isStoryMode) return; // Só anima se estiver no modo história
+
+        animationFrameId = requestAnimationFrame(animateThreeJS);
+
+        if (currentObject) {
+            currentObject.rotation.x += currentObject.rotationSpeed * 0.8;
+            currentObject.rotation.y += currentObject.rotationSpeed;
+
+            if (currentChapterId === 10) {
+                const time = Date.now() * 0.001;
+                currentObject.children[0].position.x = Math.sin(time * 0.5) * 80;
+                currentObject.children[1].position.x = Math.cos(time * 0.5) * 80;
+                currentObject.children[0].material.emissiveIntensity = 0.5 + Math.sin(time * 2) * 0.3;
+                currentObject.children[1].material.emissiveIntensity = 0.5 - Math.sin(time * 2) * 0.3;
+            }
+        }
+        renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+        if (isStoryMode && camera && renderer) {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        } else if (!isStoryMode && matrixCanvas) { // Redimensiona o canvas do matrix também
+            matrixCanvas.height = window.innerHeight;
+            matrixCanvas.width = window.innerWidth;
+            initMatrix(); // Re-inicializa letras para o novo tamanho
+        }
+    }
+    window.addEventListener('resize', onWindowResize);
+
+    // --- Funções de Digitação (para a Story Interface) ---
+    let typingTimeout;
+
+    function typeWriter(text, i, targetElement, callback) {
+        if (i < text.length) {
+            targetElement.innerHTML += text.charAt(i);
+            typingClickSound.currentTime = 0;
+            typingClickSound.play().catch(e => { /* Evita erro se o play falhar rapidamente */ });
+            typingTimeout = setTimeout(() => typeWriter(text, i + 1, targetElement, callback), 20);
+        } else if (callback) {
+            callback();
+        }
+    }
+
+    function showChapter(key) {
+      if (speechSynthesis.speaking) {
+          speechSynthesis.cancel();
+      }
+      if (typingTimeout) {
+          clearTimeout(typingTimeout);
+          typingTimeout = null;
+          storyOutput.innerHTML = '';
+      }
+
+      currentChapterId = key;
+      const chapterText = chapters[key];
+      const chapterTitle = chapterTitles[key];
+
+      if (renderer) {
+          createChapterObject(key);
+      }
+
+      document.querySelectorAll('.cmd').forEach(btn => btn.classList.remove('active'));
+      const clickedButton = document.querySelector(`.cmd[onclick="showChapter(${key})"]`);
+      if (clickedButton) {
+          clickedButton.classList.add('active');
+      }
+
+      storyOutput.innerHTML = `<h2>${chapterTitle}</h2>\n\n`;
+      const contentDiv = document.createElement('span');
+      storyOutput.appendChild(contentDiv);
+      typeWriter(chapterText, 0, contentDiv);
+      storyOutput.scrollTop = 0; // Volta para o topo ao exibir novo capítulo
+    }
+
+    // --- Narração / Text-to-Speech ---
+    let utterance = null;
+    let selectedVoice = null;
+
+    function getVoices() {
+        const voices = speechSynthesis.getVoices();
+        const ptBrVoices = voices.filter(voice => voice.lang === 'pt-BR' || voice.lang.startsWith('pt-'));
+        selectedVoice = ptBrVoices.find(voice => voice.name.includes('Google') && voice.name.includes('pt-BR')) ||
+                        ptBrVoices.find(voice => voice.name.includes('Brasil')) ||
+                        ptBrVoices[0];
+        if (!selectedVoice) {
+            console.warn("Nenhuma voz em português do Brasil encontrada, usando padrão do navegador.");
+        }
+    }
+    speechSynthesis.onvoiceschanged = getVoices;
+    getVoices();
+
+    function toggleAudio() {
+        if ('speechSynthesis' in window) {
+            if (isSpeakingSynopsis) {
+                speechSynthesis.cancel();
+            } else {
+                const synopsisText = `TREVO.PY — Entre Códigos e Confissões. Uma história real de um amor confuso, um ensino médio caótico e amizades que falavam em linguagem de máquina e coração. Pelo autor Trevo. ${chapters[0]}`;
+                utterance = new SpeechSynthesisUtterance(synopsisText);
+                utterance.lang = 'pt-BR';
+                if (selectedVoice) utterance.voice = selectedVoice;
+                utterance.volume = 1;
+                utterance.rate = 1;
+                utterance.pitch = 1;
+
+                utterance.onend = () => { isSpeakingSynopsis = false; updateAudioControlIcon(); };
+                utterance.onstart = () => { isSpeakingSynopsis = true; updateAudioControlIcon(); };
+                utterance.onerror = (event) => {
+                    console.error('Erro na síntese de fala:', event.error);
+                    isSpeakingSynopsis = false;
+                    updateAudioControlIcon();
+                };
+                speechSynthesis.speak(utterance);
+            }
+        } else {
+            console.warn("API de Text-to-Speech não suportada neste navegador.");
+        }
+
+        if (isMusicPlaying) {
+            backgroundMusic.pause();
+            isMusicPlaying = false;
+        } else {
+            backgroundMusic.play().then(() => {
+                isMusicPlaying = true;
+            }).catch(error => {
+                console.warn("Música de fundo bloqueada pelo navegador:", error);
+                isMusicPlaying = false;
+            });
+        }
+        updateAudioControlIcon();
+    }
+
+    function updateAudioControlIcon() {
+        if (isSpeakingSynopsis || isMusicPlaying) {
+            audioControl.innerText = '🔇';
+        } else {
+            audioControl.innerText = '🔊';
+        }
+    }
+    audioControl.addEventListener('click', toggleAudio);
+
+    // --- Navegação por Teclado na História ---
+    document.addEventListener('keydown', (event) => {
+        if (isStoryMode) { // Só ativa no modo história
+            if (event.key === 'ArrowRight') {
+                const nextChapter = currentChapterId + 1;
+                if (nextChapter <= Object.keys(chapters).length - 1) {
+                    showChapter(nextChapter);
+                }
+            } else if (event.key === 'ArrowLeft') {
+                const prevChapter = currentChapterId - 1;
+                if (prevChapter >= 1) {
+                    showChapter(prevChapter);
+                } else if (prevChapter === 0) {
+                     showChapter(0);
+                }
+            }
+        }
+    });
+
+    // --- Terminal Logic ---
+    const terminalResponses = {
+      'help': '<span class="terminal-info">Comandos disponíveis:</span>\n - <span class="terminal-info">start</span>: Inicia a história principal.\n - <span class="terminal-info">ls</span>: Lista os diretórios/arquivos disponíveis.\n - <span class="terminal-info">cd [diretorio]</span>: Navega para um diretório.\n - <span class="terminal-info">cat [arquivo]</span>: Exibe o conteúdo de um arquivo.\n - <span class="terminal-info">clear</span>: Limpa o terminal.\n - <span class="terminal-info">reboot</span>: Reinicia o sistema.',
+      'start': '<span class="terminal-success">Conectando ao kernel da história...</span>', // Será tratado pela função 'initStoryMode'
+      'connect': '<span class="terminal-success">Handshaking...\nConectado. Use `help` para ver comandos.</span>',
+      'ls': '<span class="terminal-info">./love/  ./memories/  ./confessions/</span>',
+      'cd love': '<span class="terminal-info">Entrou em ./love/\nArquivos:\n - iris.txt\n - albertina.old</span>',
+      'cat iris.txt': '<span class="terminal-output">"Planejei te fazer gostar... mas esqueci de fechar meu próprio coração."\n\n(Em breve: capítulo completo com animações e narração)</span>',
+      'cat loop.sh': '<span class="terminal-output">#!/bin/bash\nwhile [ true ]; do\necho "Saudade..."\nsleep 1\ndone</span>',
+      'cat 10if.log': '<span class="terminal-output">Trevo, Cleiton, Maurício e Tomás — os quatro cavaleiros da informática.\nNosso mundo era feito de código, amizade e conversas que nem todo mundo entenderia.\n\n(Arquivo completo será desbloqueado após executar: unlock 10if)</span>',
+      'unlock 10if': '<span class="terminal-success">Desbloqueando capítulo 2...\n✔ Capítulo liberado com sucesso.</span>',
+      'clear': '' // Ação limpa o histórico
+    };
+
+    function appendTerminalOutput(command, output) {
+        terminalHistory.innerHTML += `<div>trevo@py ~/story$<span style="color:#FFF;"> ${command}</span></div><div class="terminal-output">${output}</div><br />`;
+        terminalHistory.scrollTop = terminalHistory.scrollHeight; // Auto-scroll
+    }
+
+    terminalInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        const command = terminalInput.value.trim().toLowerCase();
+        terminalInput.value = ''; // Limpa o input imediatamente
+
+        if (command === 'clear') {
+            terminalHistory.innerHTML = '';
+            return; // Sai da função para não adicionar o comando 'clear' ao histórico
+        }
+        if (command === 'reboot') {
+            appendTerminalOutput(command, '<span class="terminal-info">Reiniciando sistema...</span>');
+            setTimeout(() => location.reload(), 1500); // Recarrega a página
+            return;
+        }
+
+        // Toca o som do terminal ao digitar no input
+        terminalStartSound.currentTime = 0;
+        terminalStartSound.play().catch(e => console.warn("Erro ao tocar som do terminal:", e));
+
+        if (command === 'start') {
+            appendTerminalOutput(command, terminalResponses[command]);
+            setTimeout(initStoryMode, 2000); // Pequeno atraso antes de iniciar o modo história
+        } else {
+            const output = terminalResponses[command] || `<span class="terminal-error">comando não encontrado: ${command}</span>`;
+            appendTerminalOutput(command, output);
+        }
+      }
+    });
+
+    // --- Matrix Background Logic ---
+    const matrixCtx = matrixCanvas.getContext('2d');
+    let matrixLetters = [];
+
+    function initMatrix() {
+        matrixCanvas.height = window.innerHeight;
+        matrixCanvas.width = window.innerWidth;
+        matrixLetters = Array(Math.floor(matrixCanvas.width / 10)).fill(0); // Uma posição Y inicial para cada coluna
+    }
+
+    function drawMatrix() {
+        if (isStoryMode) return; // Não desenha o matrix se estiver no modo história
+
+        matrixCtx.fillStyle = "rgba(0, 0, 0, 0.05)";
+        matrixCtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+        matrixCtx.fillStyle = "#0F0"; // Green text
+        matrixLetters.map((y_pos, index) => {
+            const text = String.fromCharCode(3e4 + Math.random() * 33); // Random Katakana-like chars
+            const x_pos = index * 10;
+            matrixCtx.fillText(text, x_pos, y_pos);
+
+            // Send the drop back to the top randomly
+            if (y_pos > matrixCanvas.height + Math.random() * 10000) {
+                matrixLetters[index] = 0;
+            } else {
+                matrixLetters[index] = y_pos + 10;
+            }
+        });
+    }
+    // Inicia o loop do matrix em background, mas ele só desenha se o isStoryMode for false
+    setInterval(drawMatrix, 33);
+
+    // --- Modo de Transição ---
+    function initStoryMode() {
+        isStoryMode = true;
+        document.body.style.overflow = 'auto'; // Habilita scroll no body para a história
+
+        // Esconde a interface do terminal e o matrix
+        terminalInterface.classList.add('hidden');
+        matrixCanvas.classList.add('hidden');
+
+        // Mostra o overlay de carregamento
+        loadingOverlay.classList.remove('fade-out');
+        loadingOverlay.style.display = 'flex';
+        loadingMessage.innerText = 'Inicializando Gráficos (Three.js)...';
+
+        // Inicia o Three.js
+        initThreeJS();
+
+        // Gera os botões dos capítulos (apenas uma vez)
+        if (commandBarButtons.children.length === 0) { // Evita duplicar botões
+            for (let i = 1; i <= Object.keys(chapters).length - 1; i++) {
+                const button = document.createElement('button');
+                button.className = 'cmd';
+                button.innerText = `cat cap${String(i).padStart(2, '0')}.txt`;
+                button.onclick = () => showChapter(i);
+                commandBarButtons.appendChild(button);
+            }
+        }
+
+        setTimeout(() => {
+            loadingMessage.innerText = 'Carregando Módulos de Áudio...';
+            backgroundMusic.load();
+            typingClickSound.load();
+
+            setTimeout(() => {
+                loadingOverlay.classList.add('fade-out');
+                setTimeout(() => {
+                    loadingOverlay.style.display = 'none';
+                    // Ativa a interface da história e mostra o botão de voltar
+                    storyInterface.classList.add('active');
+                    backToTerminalButton.style.display = 'block';
+                    terminalInput.blur(); // Remove o foco do input do terminal
+                    showChapter(0); // Exibe o prefácio
+                    toggleAudio(); // Inicia narração e música automaticamente
+                }, 1000);
+            }, 1000);
+        }, 1500);
+    }
+
+    function returnToTerminal() {
+        isStoryMode = false;
+        document.body.style.overflow = 'hidden'; // Volta a desabilitar scroll no body para o terminal
+
+        if (speechSynthesis.speaking) {
+            speechSynthesis.cancel();
+        }
+        if (typingTimeout) {
+            clearTimeout(typingTimeout);
+            typingTimeout = null;
+        }
+        backgroundMusic.pause();
+        isMusicPlaying = false;
+        updateAudioControlIcon();
+
+        // Esconde a interface da história e o botão de voltar
+        storyInterface.classList.remove('active');
+        backToTerminalButton.style.display = 'none';
+
+        // Mostra a interface do terminal e o matrix
+        terminalInterface.classList.remove('hidden');
+        matrixCanvas.classList.remove('hidden');
+        terminalInput.focus(); // Retorna o foco para o input do terminal
+        terminalHistory.scrollTop = terminalHistory.scrollHeight; // Garante que o input esteja visível
+
+        // Disposição dos objetos Three.js para liberar memória
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        if (scene && renderer) {
+            // Remove objetos da cena e dispõe de recursos
+            while(scene.children.length > 0){ 
+                let obj = scene.children[0];
+                scene.remove(obj); 
+                if(obj.geometry) obj.geometry.dispose();
+                if(obj.material){
+                    if(Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                    else obj.material.dispose();
+                }
+            }
+            renderer.dispose();
+            renderer = null;
+            scene = null;
+            camera = null;
+            currentObject = null;
+        }
+    }
+    backToTerminalButton.addEventListener('click', returnToTerminal);
+
+    // --- Inicialização da Página ---
+    window.addEventListener('load', () => {
+        // Inicializa o matrix imediatamente
+        initMatrix();
+        drawMatrix(); // Desenha o primeiro frame
+
+        loadingMessage.innerText = 'Verificando sistema de arquivos...';
+        terminalStartSound.play().catch(e => console.warn("Erro ao tocar som de início:", e));
+
+        setTimeout(() => {
+            loadingOverlay.classList.add('fade-out');
+            setTimeout(() => {
+                loadingOverlay.style.display = 'none';
+                terminalInput.focus(); // Foca no input do terminal
+            }, 1000);
+        }, 1500);
+    });
+  </script>
+</body>
+</html>
